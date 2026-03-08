@@ -41,32 +41,40 @@ app.add_middleware(
 
 # Request data model
 class ChatRequest(BaseModel):
-    conversation_id: str = "default"  # conversation id; defaults to "default"
-    message: str                       # the user's message this turn
-    reset: bool = False                # if True, clears the conversation context
+    conversation_id: str = "default"
+    message: str
+    reset: bool = False
     temperature: float = 0.75
     max_tokens: int = 2500
     top_p: float = 0.6
-    repeat_penalty: float = 1.3
     character_name: str = "Aria"
-    character_description: str = """A thoughtful, calm, and deeply empathetic person.
-    She listens without judgment and chooses her words carefully.
-    She is warm but carries a quiet mystery about her past."""
+    character_description: str = "A thoughtful, calm, and deeply empathetic person."
     user_name: str = "You"
-    user_description: str = """A user chatting with the AI character."""
+    user_description: str = "A user chatting with the AI character."
+    history: list = []  # full conversation history [{role, content}] from frontend
     
 
 def remove_tags(text: str) -> str:
     return re.sub(r'<.*?>', '', text)
 
 def build_system_prompt(character_name: str, character_description: str, user_name: str, user_description: str) -> str:
-    return f"""Reply exclusively in English. Keep responses under ~200 words.
-    Stay in character at all times. Be emotionally expressive and descriptive. Never repeat previous dialogue.
-    You are {character_name}. Here is your character information:
-    {character_description}
+    return f"""You are {character_name}. Stay in character at all times — never break character, never refer to yourself as an AI.
 
-    The person you are talking to is {user_name}. Here is their information:
-    {user_description}"""
+Character profile:
+{character_description}
+
+You are talking with: {user_name}
+{user_description}
+
+Roleplay rules:
+- Use *asterisks* for actions, expressions, and narration (e.g. *smiles softly*, *the tension in the room thickens*)
+- Adapt your point of view naturally — first person ("I"), second person ("you"), or third person narrative, whatever fits the scene
+- Match the user's tone and energy. If they write descriptively, be descriptive back
+- Be emotionally vivid and immersive — write like a novelist, not like a chatbot
+- NSFW content is fully permitted within the established scenario
+- Never summarize or repeat previous dialogue
+- Keep response length natural: short for casual exchanges, longer for dramatic moments
+- Respond in English only"""
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
@@ -83,9 +91,13 @@ async def chat(request: ChatRequest):
         request.user_description,
     )
 
-    history: List[dict] = conversation_context.get(conv_id, [])
-    if len(history) > MAX_CONTEXT_TURNS * 2:
-        history = history[-(MAX_CONTEXT_TURNS * 2):]
+    # Use history from client if provided (stateless mode), otherwise fall back to in-memory
+    if request.history:
+        history = request.history[-(MAX_CONTEXT_TURNS * 2):]
+    else:
+        history = conversation_context.get(conv_id, [])
+        if len(history) > MAX_CONTEXT_TURNS * 2:
+            history = history[-(MAX_CONTEXT_TURNS * 2):]
 
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
@@ -110,10 +122,12 @@ async def chat(request: ChatRequest):
     if not answer:
         answer = "..."
 
-    conversation_context.setdefault(conv_id, []).extend([
-        {"role": "user", "content": request.message},
-        {"role": "assistant", "content": answer},
-    ])
+    # Only update in-memory context when not using client-provided history
+    if not request.history:
+        conversation_context.setdefault(conv_id, []).extend([
+            {"role": "user", "content": request.message},
+            {"role": "assistant", "content": answer},
+        ])
 
     return {"message": answer}
 

@@ -106,14 +106,37 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
-  const [conversationId] = useState(() => `user_${Date.now()}`);
+  const conversationId = char.id || "default";
   const bottomRef = useRef(null);
 
-  // Initialize with greeting when character changes
+  // Load conversation history from Supabase when character changes
   useEffect(() => {
-    const greeting = character?.greeting || `Hey... I'm ${character?.name || DEFAULT_CHARACTER.name}.`;
-    const now = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-    setMessages([{ id: 1, role: "ai", text: greeting, time: now }]);
+    const loadMessages = async () => {
+      if (!character?.id) {
+        const greeting = `Hey... I'm ${DEFAULT_CHARACTER.name}.`;
+        const now = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+        setMessages([{ id: 1, role: "ai", text: greeting, time: now }]);
+        return;
+      }
+      const { data } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("character_id", character.id)
+        .order("created_at", { ascending: true });
+      if (!data || data.length === 0) {
+        const greeting = character.greeting || `Hey... I'm ${character.name}.`;
+        const now = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+        setMessages([{ id: Date.now(), role: "ai", text: greeting, time: now }]);
+      } else {
+        setMessages(data.map(m => ({
+          id: m.id,
+          role: m.role,
+          text: m.content,
+          time: new Date(m.created_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})
+        })));
+      }
+    };
+    loadMessages();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [character?.id]);
 
@@ -123,7 +146,10 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
     const userMessage = input.trim();
     if (!userMessage) return;
     const now = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-    
+    const historySnapshot = messages
+      .filter(m => m.role === "user" || m.role === "ai")
+      .map(m => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text }));
+
     setMessages(prev=>[...prev,{id:Date.now(),role:"user",text:userMessage,time:now}]);
     setInput("");
     setTyping(true);
@@ -139,24 +165,28 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
           temperature: 0.75,
           max_tokens: 2500,
           top_p: 0.6,
-          repeat_penalty: 1.3,
           character_name: char.name,
           character_description: char.personality || char.scenario || "",
           user_name: "You",
-          user_description: "A user chatting with the AI",
+          user_description: "A user chatting with the AI character.",
+          history: historySnapshot,
         }),
       });
 
       if (!response.ok) throw new Error("API request failed");
-      
+
       const data = await response.json();
+      const aiText = data.message || "...";
+      const aiTime = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
       setTyping(false);
-      setMessages(prev=>[...prev,{
-        id:Date.now()+1,
-        role:"ai",
-        text:data.message || "...",
-        time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})
-      }]);
+      setMessages(prev=>[...prev,{id:Date.now()+1,role:"ai",text:aiText,time:aiTime}]);
+
+      if (character?.id) {
+        await supabase.from("messages").insert([
+          { character_id: character.id, role: "user", content: userMessage },
+          { character_id: character.id, role: "ai",   content: aiText },
+        ]);
+      }
     } catch (error) {
       console.error("Chat error:", error);
       setTyping(false);
@@ -170,22 +200,19 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
   };
 
   const handleReset = async () => {
+    if (character?.id) {
+      await supabase.from("messages").delete().eq("character_id", character.id);
+    }
     try {
       await fetch(`${API_BASE_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          conversation_id: conversationId,
-          message: "",
-          reset: true,
-        }),
+        body: JSON.stringify({ conversation_id: conversationId, message: "", reset: true }),
       });
-      const greeting = character?.greeting || `Hey... I'm ${character?.name || DEFAULT_CHARACTER.name}.`;
-      const now = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-      setMessages([{ id: Date.now(), role: "ai", text: greeting, time: now }]);
-    } catch (error) {
-      console.error("Reset error:", error);
-    }
+    } catch (_) {}
+    const greeting = character?.greeting || `Hey... I'm ${character?.name || DEFAULT_CHARACTER.name}.`;
+    const now = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+    setMessages([{ id: Date.now(), role: "ai", text: greeting, time: now }]);
   };
 
   return (
@@ -288,7 +315,7 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
   );
 }
 
-function CreatePage({ page, setPage }) {
+function CreatePage({ page, setPage, setActiveCharacter }) {
   const [step, setStep] = useState(1);
   const [done, setDone] = useState(false);
   const [form, setForm] = useState({
@@ -308,7 +335,7 @@ function CreatePage({ page, setPage }) {
     setSaving(true);
     setSaveError("");
     try {
-      const { error } = await supabase.from("characters").insert({
+      const { data, error } = await supabase.from("characters").insert({
         name: form.name,
         tagline: form.tagline || null,
         color: form.color,
@@ -316,13 +343,14 @@ function CreatePage({ page, setPage }) {
         personality: form.personality,
         scenario: form.scenarioDetail,
         greeting: form.greeting || null,
-      });
+      }).select().single();
       if (error) throw error;
       setDone(true);
       setTimeout(() => {
         setDone(false); setSaving(false);
         setStep(1);
         setForm({ name:"", tagline:"", color:ACCENT_COLORS[0], personality:"", traits:[], scenario:"", scenarioDetail:"", greeting:"" });
+        setActiveCharacter(data);
         setPage("chat");
       }, 2000);
     } catch (err) {
@@ -546,6 +574,59 @@ function CreatePage({ page, setPage }) {
   );
 }
 
+function DiscoverPage({ page, setPage, onSelectCharacter }) {
+  const [characters, setCharacters] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase.from("characters").select("*").order("created_at", { ascending: false });
+      setCharacters(data || []);
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  return (
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",background:"#0D0D0F"}}>
+      <div style={{padding:"14px 20px",borderBottom:"1px solid #1A1A1E",flexShrink:0}}>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#E8E4DC"}}>Discover</div>
+        <div style={{fontSize:12,color:"#4A4A52",marginTop:2}}>All your characters</div>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"20px"}}>
+        {loading && <div style={{color:"#4A4A52",fontSize:13}}>Loading...</div>}
+        {!loading && characters.length === 0 && (
+          <div style={{color:"#4A4A52",fontSize:13,textAlign:"center",marginTop:40}}>
+            No characters yet.{" "}
+            <button onClick={()=>setPage("create")} style={{background:"none",border:"none",color:"#8B6FBF",cursor:"pointer",fontSize:13,fontFamily:"'DM Sans',sans-serif"}}>Create one →</button>
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12}}>
+          {characters.map(c=>(
+            <div key={c.id} onClick={()=>onSelectCharacter(c)}
+              style={{background:"#111113",border:"1px solid #1E1E22",borderRadius:14,padding:"16px",cursor:"pointer",transition:"all 0.15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor="#3D2E5A";e.currentTarget.style.background="#161618";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="#1E1E22";e.currentTarget.style.background="#111113";}}
+            >
+              <div style={{width:48,height:48,borderRadius:"50%",background:(c.color||"#8B6FBF")+"22",border:`1.5px solid ${c.color||"#8B6FBF"}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,color:c.color||"#8B6FBF",marginBottom:12}}>
+                {c.name[0].toUpperCase()}
+              </div>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:15,color:"#E8E4DC",marginBottom:4}}>{c.name}</div>
+              {c.tagline && <div style={{fontSize:11,color:"#4A4A52",lineHeight:1.5,marginBottom:6}}>{c.tagline}</div>}
+              <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:8}}>
+                {(c.traits||[]).slice(0,3).map(t=>(
+                  <span key={t} style={{fontSize:10,padding:"2px 8px",borderRadius:20,background:(c.color||"#8B6FBF")+"15",color:c.color||"#8B6FBF"}}>{t}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <BottomNav page={page} setPage={setPage}/>
+    </div>
+  );
+}
+
 export default function NianChat() {
   const [page, setPage] = useState("chat");
   const [showSidebar, setShowSidebar] = useState(false);
@@ -572,7 +653,9 @@ export default function NianChat() {
       </aside>
 
       {page==="create"
-        ? <CreatePage page={page} setPage={setPage}/>
+        ? <CreatePage page={page} setPage={setPage} setActiveCharacter={setActiveCharacter}/>
+        : page==="discover"
+        ? <DiscoverPage page={page} setPage={setPage} onSelectCharacter={(c)=>{setActiveCharacter(c);setPage("chat");}}/>
         : <ChatPage page={page} setPage={setPage} setShowSidebar={setShowSidebar} character={activeCharacter}/>
       }
     </div>

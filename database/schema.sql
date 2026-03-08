@@ -28,6 +28,23 @@ CREATE TABLE IF NOT EXISTS public.characters (
     CONSTRAINT characters_name_check CHECK (char_length(name) >= 1)
 );
 
+-- Create messages table for persisting conversation history
+CREATE TABLE IF NOT EXISTS public.messages (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    character_id UUID NOT NULL REFERENCES public.characters(id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL CHECK (role IN ('user', 'ai')),
+    content TEXT NOT NULL
+);
+
+-- Index for fast lookup of a character's messages in order
+CREATE INDEX IF NOT EXISTS messages_character_id_created_at_idx
+    ON public.messages (character_id, created_at ASC);
+
+-- Enable Row Level Security (open policy for personal use)
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on messages" ON public.messages FOR ALL USING (true) WITH CHECK (true);
+
 -- Create index on created_at for sorting
 CREATE INDEX IF NOT EXISTS characters_created_at_idx ON public.characters(created_at DESC);
 
