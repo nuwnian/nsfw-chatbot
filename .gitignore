@@ -8,6 +8,7 @@ __pycache__/
 pip-log.txt
 pip-delete-this-directory.txt
 venv/
+.venv/
 env/
 ENV/
 
@@ -73,3 +74,5 @@ coverage/
 # OS
 Thumbs.db
 .DS_Store
+
+venv/

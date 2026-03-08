@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: nian-chat-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn guff_server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: MAX_CONTEXT_TURNS
+        value: "10"
+      - key: DEFAULT_TEMPERATURE
+        value: "0.75"
+      - key: DEFAULT_MAX_TOKENS
+        value: "2500"
+      - key: GROQ_API_KEY
+        sync: false        # Set this manually in the Render dashboard
+      - key: CORS_ORIGINS
+        sync: false        # Set to your deployed frontend URL, e.g. https://yourapp.vercel.app
