@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
-import { API_BASE_URL, DEFAULT_CHARACTER, ACCENT_COLORS, PERSONALITY_PRESETS, SCENARIO_EXAMPLES } from "./config";
+import { API_BASE_URL, DEFAULT_CHARACTER, ACCENT_COLORS, SCENARIO_EXAMPLES } from "./config";
 import "./App.css";
 
 function BottomNav({ page, setPage }) {
@@ -114,12 +114,14 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
     const greeting = character?.greeting || `Hey... I'm ${character?.name || DEFAULT_CHARACTER.name}.`;
     const now = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
     setMessages([{ id: 1, role: "ai", text: greeting, time: now }]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [character?.id]);
 
   useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:"smooth"}); },[messages,typing]);
 
   const sendMessage = async () => {
     const userMessage = input.trim();
+    if (!userMessage) return;
     const now = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
     
     setMessages(prev=>[...prev,{id:Date.now(),role:"user",text:userMessage,time:now}]);
