@@ -44,7 +44,7 @@ jobs:
           pytest --cov=. --cov-report=xml || true
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: ./backend/coverage.xml
           flags: backend
@@ -110,7 +110,7 @@ jobs:
           python -m py_compile guff_server.py
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: frontend-build
           path: frontend/build/
