@@ -4,3 +4,8 @@ groq
 pydantic
 python-multipart
 python-dotenv
+flake8
+black
+pylint
+pytest
+pytest-cov
