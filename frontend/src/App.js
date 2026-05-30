@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
 import { API_BASE_URL, DEFAULT_CHARACTER, ACCENT_COLORS, SCENARIO_EXAMPLES } from "./config";
+import EmojiPicker from "emoji-picker-react";
 import "./App.css";
 
 function BottomNav({ page, setPage }) {
@@ -106,8 +107,10 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const conversationId = char.id || "default";
   const bottomRef = useRef(null);
+  const inputRef = useRef(null);
 
   // Load conversation history from Supabase when character changes
   useEffect(() => {
@@ -152,6 +155,7 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
 
     setMessages(prev=>[...prev,{id:Date.now(),role:"user",text:userMessage,time:now}]);
     setInput("");
+    setShowEmojiPicker(false);
     setTyping(true);
 
     try {
@@ -215,6 +219,12 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
     setMessages([{ id: Date.now(), role: "ai", text: greeting, time: now }]);
   };
 
+  const handleEmojiClick = (emojiObject) => {
+    setInput(prev => prev + emojiObject.emoji);
+    setShowEmojiPicker(false);
+    inputRef.current?.focus();
+  };
+
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",position:"relative"}}>
       {/* Header */}
@@ -264,9 +274,12 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
       </div>
 
       {/* Input */}
-      <div style={{padding:"12px 16px 14px",borderTop:"1px solid #1A1A1E",background:"#0D0D0F",flexShrink:0}}>
+      <div style={{padding:"12px 16px 14px",borderTop:"1px solid #1A1A1E",background:"#0D0D0F",flexShrink:0,position:"relative"}}>
         <div style={{display:"flex",alignItems:"flex-end",gap:10,background:"#111113",border:"1px solid #222226",borderRadius:16,padding:"10px 14px"}}>
-          <textarea className="chat-input" placeholder={`Message ${char.name}...`} value={input}
+          <button onClick={()=>setShowEmojiPicker(!showEmojiPicker)} style={{background:"transparent",border:"none",color:"#4A4A52",cursor:"pointer",fontSize:18,padding:"4px 2px",display:"flex",alignItems:"center",justifyContent:"center",transition:"color 0.15s"}} title="Add emoji">
+            😀
+          </button>
+          <textarea ref={inputRef} className="chat-input" placeholder={`Message ${char.name}...`} value={input}
             onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage();}}}
             rows={1} style={{height:"auto"}}
@@ -276,6 +289,11 @@ function ChatPage({ page, setPage, setShowSidebar, character }) {
             <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" style={{width:16,height:16}}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
         </div>
+        {showEmojiPicker && (
+          <div style={{position:"absolute",bottom:"100%",left:"12px",marginBottom:"10px",zIndex:1000}}>
+            <EmojiPicker onEmojiClick={handleEmojiClick} theme="dark" height={300} width={300}/>
+          </div>
+        )}
         <div style={{fontSize:11,color:"#2A2A32",textAlign:"center",marginTop:6}}>nian<span style={{color:"#E07A2F"}}>.</span>chat · AI characters may say unexpected things</div>
       </div>
 
